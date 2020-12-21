@@ -8,3 +8,6 @@
 /httpRequests/
 .idea
 **/__pycache__
+.ipynb_checkpoints/
+camera_cal/camera_matrix.npy
+camera_cal/dist_coeff.npy

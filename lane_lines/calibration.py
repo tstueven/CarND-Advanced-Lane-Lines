@@ -1,3 +1,5 @@
+import os.path
+import glob
 import numpy as np
 import cv2
 
@@ -43,3 +45,20 @@ def calibrate(images):
                                                        None)
 
     return mtx, dist
+
+
+def load_calibration(folder):
+    # Check if calibration parameters are already stored in file
+    if os.path.isfile(folder + '/camera_matrix.npy') and os.path.isfile(
+            folder + '/dist_coeff.npy'):
+        camera_matrix = np.load(folder + '/camera_matrix.npy')
+        dist_coeff = np.load(folder + '/dist_coeff.npy')
+    # if not, perform the calibration
+    else:
+        # Make a list of calibration images
+        images = glob.glob(folder + '/calibration*.jpg')
+        camera_matrix, dist_coeff = calibrate(images)
+        np.save(folder + '/camera_matrix.npy', camera_matrix)
+        np.save(folder + 'camer_cal/dist_coeff.npy', dist_coeff)
+        
+    return camera_matrix, dist_coeff
