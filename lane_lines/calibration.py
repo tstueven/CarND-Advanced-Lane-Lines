@@ -59,6 +59,6 @@ def load_calibration(folder):
         images = glob.glob(folder + '/calibration*.jpg')
         camera_matrix, dist_coeff = calibrate(images)
         np.save(folder + '/camera_matrix.npy', camera_matrix)
-        np.save(folder + 'camer_cal/dist_coeff.npy', dist_coeff)
+        np.save(folder + '/dist_coeff.npy', dist_coeff)
         
     return camera_matrix, dist_coeff
