@@ -1,11 +1,21 @@
 import numpy as np
-import matplotlib.image as mpimg
 import cv2
+from lane_lines import Line
 
 
 class Image_Processor():
-    def __init__(self, image):
-        self.img_orig = mpimg.imread(image)
+    def __init__(self, cam_matrix, dist_coeff, perspective_transform_matrix,
+                 perspective_transform_matrix_inv):
+        self.cam_matrix = cam_matrix
+        self.dist_coeff = dist_coeff
+        self.perspective_transform_matrix = perspective_transform_matrix
+        self.perspective_transform_matrix_inv = perspective_transform_matrix_inv
+        self.line_left = Line.Line()
+        self.line_right = Line.Line()
+
+    def new_image(self, image):
+        # reset everything
+        self.img_orig = image
         self.img_undist = None
         self.img_gray = None
         self.img_hls = None
@@ -17,15 +27,11 @@ class Image_Processor():
         self.combined_binary = None
         self.combined_binary_warped = None
 
-    def set_perspective_transform(self, perspective_transform_matrix,
-                                  perspective_transform_matrix_inv):
-        self.perspective_transform_matrix = perspective_transform_matrix
-        self.perspective_transform_matrix_inv = perspective_transform_matrix_inv
-
-    def undistort(self, cam_matrix, dist_coeff):
-        self.img_undist = cv2.undistort(self.img_orig, cam_matrix, dist_coeff,
+    def undistort(self):
+        self.img_undist = cv2.undistort(self.img_orig, self.cam_matrix,
+                                        self.dist_coeff,
                                         None,
-                                        cam_matrix)
+                                        self.cam_matrix)
 
     def grayscale(self):
         if self.img_gray is None:
@@ -82,11 +88,11 @@ class Image_Processor():
         self.abs_gradient_binary[
             (abs_gradient >= thresh[0]) & (abs_gradient <= thresh[1])] = 1
 
-    def calc_dir_gradient_binary(self, kernel_size=3, thresh=(0, 90),
+    def calc_dir_gradient_binary(self, kernel_sizes=(3, 5, 7), thresh=(0, 90),
                                  degrees=True):
         if degrees:
             thresh = (np.deg2rad(thresh[0]), np.deg2rad(thresh[1]))
-        grad_dir = self.sobel_dir(kernel_size)
+        grad_dir = self.sobel_dir(kernel_sizes)
         self.dir_gradient_binary = np.zeros(self.img_orig.shape[:2])
         self.dir_gradient_binary[
             (grad_dir >= thresh[0]) & (grad_dir <= thresh[1])] = 1
@@ -116,16 +122,16 @@ class Image_Processor():
                           self.abs_gradient_binary * self.dir_gradient_binary,
                           self.hls_thresh_binary))
 
-    def warp_perspective_binary(self, perspective_transform_matrix):
+    def warp_perspective_binary(self):
         self.combined_binary_warped = cv2.warpPerspective(self.combined_binary,
-                                                 perspective_transform_matrix,
-                                                 self.combined_binary.shape[
-                                                 1::-1],
-                                                 flags=cv2.INTER_LINEAR)
+                                                          self.perspective_transform_matrix,
+                                                          self.combined_binary.shape[
+                                                          1::-1],
+                                                          flags=cv2.INTER_LINEAR)
 
-    def get_warped_perspective_img_undist(self, perspective_transform_matrix):
+    def get_warped_perspective_img_undist(self):
         return cv2.warpPerspective(self.img_undist,
-                                   perspective_transform_matrix,
+                                   self.perspective_transform_matrix,
                                    self.combined_binary.shape[
                                    1::-1],
                                    flags=cv2.INTER_LINEAR)
@@ -218,7 +224,142 @@ class Image_Processor():
         pixels_left = np.array([leftx, lefty]).T
         pixels_right = np.array([rightx, righty]).T
         # More intuitive for me to have pixels grouped together like this
+
+        self.line_left.fit_polynomial(pixels_left)
+        self.line_right.fit_polynomial(pixels_right)
         if return_image:
-            return pixels_left, pixels_right, out_img
+            out_img[lefty, leftx] = [255, 0, 0]
+            out_img[righty, rightx] = [0, 0, 255]
+            return out_img
+
+    def find_lane_pixels_poly(self, return_image=False):
+        binary_warped = self.combined_binary_warped
+        # Take a histogram of the bottom half of the image
+        histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :],
+                           axis=0)
+        if return_image:
+            # Create an output image to draw on and visualize the result
+            out_img = np.dstack((binary_warped, binary_warped, binary_warped))
+
+        # Identify the x and y positions of all nonzero pixels in the image
+        nonzero = binary_warped.nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+
+        # HYPERPARAMETERS
+        # Set the width of the windows +/- margin
+        margin = 100
+
+        poly_values_left = self.line_left.get_poly_pixel_x_values(nonzeroy)
+        poly_values_right = self.line_right.get_poly_pixel_x_values(nonzeroy)
+        left_lane_inds = (nonzerox > poly_values_left - margin) & (
+                nonzerox < poly_values_left + margin)
+        right_lane_inds = (nonzerox > poly_values_right - margin) & (
+                nonzerox < poly_values_right + margin)
+
+        # Again, extract left and right line pixel positions
+        leftx = nonzerox[left_lane_inds]
+        lefty = nonzeroy[left_lane_inds]
+        rightx = nonzerox[right_lane_inds]
+        righty = nonzeroy[right_lane_inds]
+
+        pixels_left = np.array([leftx, lefty]).T
+        pixels_right = np.array([rightx, righty]).T
+        # More intuitive for me to have pixels grouped together like this
+        self.line_left.fit_polynomial(pixels_left)
+        self.line_right.fit_polynomial(pixels_right)
+
+        if return_image:
+            ## Visualization ##
+            # Create an image to draw on and an image to show the selection window
+            out_img = np.dstack(
+                (binary_warped, binary_warped, binary_warped)) * 255
+            window_img = np.zeros_like(out_img)
+            # Color in left and right line pixels
+            out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255,
+                                                                           0, 0]
+            out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0,
+                                                                             0,
+                                                                             255]
+
+            plot_y = np.linspace(0, self.combined_binary_warped.shape[0],
+                                 self.combined_binary_warped.shape[0])
+            left_fit_x = self.line_left.get_poly_pixel_x_values(plot_y)
+            right_fit_x = self.line_right.get_poly_pixel_x_values(plot_y)
+
+            # Generate a polygon to illustrate the search window area
+            # And recast the x and y points into usable format for cv2.fillPoly()
+            left_line_window1 = np.array(
+                [np.transpose(np.vstack([left_fit_x - margin, plot_y]))])
+            left_line_window2 = np.array(
+                [np.flipud(np.transpose(np.vstack([left_fit_x + margin,
+                                                   plot_y])))])
+            left_line_pts = np.hstack((left_line_window1, left_line_window2))
+            right_line_window1 = np.array(
+                [np.transpose(np.vstack([right_fit_x - margin, plot_y]))])
+            right_line_window2 = np.array(
+                [np.flipud(np.transpose(np.vstack([right_fit_x + margin,
+                                                   plot_y])))])
+            right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+            # Draw the lane onto the warped blank image
+            cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+            cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+            result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+            return result
+
+    def find_lane_line_pixels(self):
+        if (self.line_left.best_fit is not None) and (
+                self.line_right.best_fit is not None):
+            self.find_lane_pixels_poly()
         else:
-            return pixels_left, pixels_right
+            self.find_lane_pixels_sliding_window()
+
+        if self.line_left.sanity_check(self.line_right):
+            self.line_left.accept_fit(True)
+            self.line_right.accept_fit(True)
+        else:
+            self.line_left.accept_fit(False)
+            self.line_right.accept_fit(False)
+
+    def draw_lane(self):
+        warp_zero = np.zeros_like(self.combined_binary_warped).astype(np.uint8)
+        color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+        plot_y = np.linspace(0, self.combined_binary_warped.shape[0],
+                             self.combined_binary_warped.shape[0])
+        left_fit_x = self.line_left.get_poly_pixel_x_values(plot_y)
+        right_fit_x = self.line_right.get_poly_pixel_x_values(plot_y)
+
+        # Recast the x and y points into usable format for cv2.fillPoly()
+        pts_left = np.array([np.transpose(np.vstack([left_fit_x, plot_y]))])
+        pts_right = np.array(
+            [np.flipud(np.transpose(np.vstack([right_fit_x, plot_y])))])
+        pts = np.hstack((pts_left, pts_right))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+
+        # Warp the blank back to original image space using inverse perspective matrix (Minv)
+        unwarp = cv2.warpPerspective(color_warp,
+                                     self.perspective_transform_matrix_inv,
+                                     (self.img_undist.shape[1],
+                                      self.img_undist.shape[0]))
+        # Combine the result with the original image
+        result = cv2.addWeighted(self.img_undist, 1, unwarp, 0.3, 0)
+
+        return result
+
+    def process_image(self, image):
+        self.new_image(image)
+        self.undistort()
+        self.calc_abs_gradient_binary(kernel_sizes=(3, 7, 11),
+                                      thresh=(60, 255))
+        self.calc_dir_gradient_binary(kernel_sizes=(3, 7, 11),
+                                      thresh=(30, 80), degrees=True)
+        self.calc_hls_thresh_binary(channel='s', thresh=(170, 255))
+        self.calc_combined_binary()
+        self.warp_perspective_binary()
+        self.find_lane_pixels_sliding_window()
+        self.find_lane_pixels_poly()
+        return self.draw_lane()
