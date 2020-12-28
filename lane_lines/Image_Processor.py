@@ -309,15 +309,20 @@ class Image_Processor():
             return result
 
     def find_lane_line_pixels(self):
-        if (self.line_left.best_fit is not None) and (
-                self.line_right.best_fit is not None):
+        if (self.line_left.fail_counter < 10) and (
+                self.line_right.fail_counter < 10):
             self.find_lane_pixels_poly()
         else:
             self.find_lane_pixels_sliding_window()
 
-        if self.line_left.sanity_check(self.line_right):
-            self.line_left.accept_fit(True)
-            self.line_right.accept_fit(True)
+        if self.line_left.sanity_check_other(self.line_right):
+            if self.line_left.sanity_check_self():
+                self.line_left.accept_fit(True)
+            else:
+                self.line_left.accept_fit(False)
+            if self.line_right.sanity_check_self():
+                self.line_right.accept_fit(True)
+            self.line_right.accept_fit(False)
         else:
             self.line_left.accept_fit(False)
             self.line_right.accept_fit(False)

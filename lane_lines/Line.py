@@ -82,7 +82,7 @@ class Line():
 
         return self.radius_of_curvature
 
-    def distance(self, other):
+    def distance_current(self, other):
         """
         Returns minimal and maximal distance between two lines.
         """
@@ -92,9 +92,16 @@ class Line():
         diff = other_poly(y) - this_poly(y)
         return diff.min(), diff.max()
 
-    def sanity_check(self, other):
+    def distance_self_past(self):
+        this_poly = np.poly1d(self.current_fit)
+        other_poly = np.poly1d(self.best_fit)
+        y = np.linspace(0, 30, 100)
+        diff = other_poly(y) - this_poly(y)
+        return diff.min(), diff.max()
+
+    def sanity_check_other(self, other):
         # Check lines are separated at approximately the same distance
-        dist_min, dist_max = self.distance(other)
+        dist_min, dist_max = self.distance_current(other)
         if dist_min < 3 or dist_max > 4.5:
             return False
         # Check for similar curvature
@@ -103,6 +110,14 @@ class Line():
                 radius_quotient > 1.25 or radius_quotient < 0.8):
             return False
         # Rough parallelity implicit in other two conditions
+
+        return True
+
+    def sanity_check_self(self):
+        # Check if line stays similar to before
+        dist_min, dist_max = self.distance_self_past()
+        if dist_max > 0.3:
+            return False
         return True
 
     def accept_fit(self, accept):
@@ -114,10 +129,8 @@ class Line():
             self.measure_curvature_real_smoothed()
         else:
             self.detected = False
-            self.all_pixels.append(np.array([[]]))
+            # self.all_pixels.append(np.array([[]]))
             self.fail_counter += 1
-            if self.fail_counter >= 10:
-                self.best_fit = None
 
     def get_poly_pixel_x_values(self, y_values):
         if self.best_fit is not None:
