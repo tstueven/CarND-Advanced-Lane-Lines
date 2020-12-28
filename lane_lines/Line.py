@@ -27,22 +27,20 @@ class Line():
         # values for detected line pixels
         self.pixels = None
         self.all_pixels = []
-        self.fail_counter = 0
+        self.fail_counter = 1000
 
     def fit_polynomial(self, pixels):
         self.pixels = pixels
         px_x, px_y = pixels[:, 0], pixels[:, 1]
         # Fit a second order polynomial to each using `np.polyfit`
-        self.current_fit = np.polyfit(px_y,
-                                      px_x, 2)
+        self.current_fit = np.polyfit(px_y, px_x, 2)
 
     def fit_polynomial_smoothed(self):
         # TODO : Probably weigh more recent ones more?
         pixels = np.concatenate(self.all_pixels[-10:])
         px_x, px_y = pixels[:, 0], pixels[:, 1]
         # Fit a second order polynomial to each using `np.polyfit`
-        self.best_fit = np.polyfit(self.ym_per_pix * px_y,
-                                   self.xm_per_pix * px_x, 2)
+        self.best_fit = np.polyfit(px_y, px_x, 2)
 
     def measure_curvature_real(self):
         '''
@@ -82,21 +80,21 @@ class Line():
 
         return self.radius_of_curvature
 
-    def distance_current(self, other):
+    def distance_other(self, other):
         """
         Returns minimal and maximal distance between two lines.
         """
         this_poly = np.poly1d(self.current_fit)
         other_poly = np.poly1d(other.current_fit)
-        y = np.linspace(0, 30, 100)
-        diff = other_poly(y) - this_poly(y)
+        y = np.linspace(0, 720, 721)
+        diff = np.absolute(other_poly(y) - this_poly(y)) * self.xm_per_pix
         return diff.min(), diff.max()
 
     def distance_self_past(self):
         this_poly = np.poly1d(self.current_fit)
         other_poly = np.poly1d(self.best_fit)
         y = np.linspace(0, 30, 100)
-        diff = other_poly(y) - this_poly(y)
+        diff = np.absolute(other_poly(y) - this_poly(y)) * self.xm_per_pix
         return diff.min(), diff.max()
 
     def sanity_check_other(self, other):
@@ -105,7 +103,7 @@ class Line():
         if dist_min < 3 or dist_max > 4.5:
             return False
         # Check for similar curvature
-        radius_quotient = self.radius_of_curvature / other.radius_of_curvature
+        radius_quotient = self.measure_curvature_real() / other.measure_curvature_real()
         if self.radius_of_curvature < 2000 and (
                 radius_quotient > 1.25 or radius_quotient < 0.8):
             return False
@@ -114,9 +112,12 @@ class Line():
         return True
 
     def sanity_check_self(self):
+        if self.best_fit is None:
+            return True
         # Check if line stays similar to before
         dist_min, dist_max = self.distance_self_past()
-        if dist_max > 0.3:
+        if dist_max > 0.5:
+            print('dist_self:', dist_max)
             return False
         return True
 

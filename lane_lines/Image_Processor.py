@@ -322,7 +322,8 @@ class Image_Processor():
                 self.line_left.accept_fit(False)
             if self.line_right.sanity_check_self():
                 self.line_right.accept_fit(True)
-            self.line_right.accept_fit(False)
+            else:
+                self.line_right.accept_fit(False)
         else:
             self.line_left.accept_fit(False)
             self.line_right.accept_fit(False)
@@ -365,6 +366,6 @@ class Image_Processor():
         self.calc_hls_thresh_binary(channel='s', thresh=(170, 255))
         self.calc_combined_binary()
         self.warp_perspective_binary()
-        self.find_lane_pixels_sliding_window()
-        self.find_lane_pixels_poly()
+        self.find_lane_line_pixels()
+        # self.line_left.measure_curvature_real()
         return self.draw_lane()
