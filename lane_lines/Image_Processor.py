@@ -353,7 +353,7 @@ class Image_Processor():
                                      (self.img_undist.shape[1],
                                       self.img_undist.shape[0]))
         # Combine the result with the original image
-        img = self.img_undist
+        img = self.img_undist.copy()
         mean_radius = (self.line_left.radius_of_curvature
                        + self.line_right.radius_of_curvature) / 2
         dist_from_center = self.line_left.line_base_pos \
