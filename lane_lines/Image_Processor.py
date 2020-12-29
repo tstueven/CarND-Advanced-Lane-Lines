@@ -132,7 +132,7 @@ class Image_Processor():
     def get_warped_perspective_img_undist(self):
         return cv2.warpPerspective(self.img_undist,
                                    self.perspective_transform_matrix,
-                                   self.combined_binary.shape[
+                                   self.img_undist.shape[
                                    1::-1],
                                    flags=cv2.INTER_LINEAR)
 
