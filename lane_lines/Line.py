@@ -27,6 +27,7 @@ class Line():
         # values for detected line pixels
         self.pixels = None
         self.all_pixels = []
+        self.all_weights = []
         self.fail_counter = 1000
 
     def fit_polynomial(self, pixels):
@@ -36,11 +37,18 @@ class Line():
         self.current_fit = np.polyfit(px_y, px_x, 2)
 
     def fit_polynomial_smoothed(self):
-        # TODO : Probably weigh more recent ones more?
-        pixels = np.concatenate(self.all_pixels[-10:])
+        pixels = np.concatenate(self.all_pixels[-15:])
+        weights = []
+        for i, w in enumerate(self.all_weights[-15:]):
+            weights.append((i + 1) / np.sqrt(len(w)) * w)
+        weights = np.concatenate(weights)
         px_x, px_y = pixels[:, 0], pixels[:, 1]
         # Fit a second order polynomial to each using `np.polyfit`
-        self.best_fit = np.polyfit(px_y, px_x, 2)
+        self.best_fit = np.polyfit(px_y, px_x, 2)  # , w=weights)
+
+    def calc_line_based_position(self):
+        pix_pos = np.poly1d(self.best_fit)(720)
+        self.line_base_pos = self.xm_per_pix * (pix_pos - 1280 / 2)
 
     def measure_curvature_real(self):
         '''
@@ -99,14 +107,18 @@ class Line():
 
     def sanity_check_other(self, other):
         # Check lines are separated at approximately the same distance
-        dist_min, dist_max = self.distance_current(other)
-        if dist_min < 3 or dist_max > 4.5:
+        dist_min, dist_max = self.distance_other(other)
+        if dist_min < 3.2 or dist_max > 4.4:
             return False
         # Check for similar curvature
         radius_quotient = self.measure_curvature_real() / other.measure_curvature_real()
-        if self.radius_of_curvature < 2000 and (
-                radius_quotient > 1.25 or radius_quotient < 0.8):
-            return False
+        if self.radius_of_curvature < 2000:
+            if radius_quotient > 1.25 or radius_quotient < 0.8:
+                return False
+            if np.sign(self.best_fit[0]) != np.sign(self.best_fit[0]):
+                if (self.radius_of_curvature < 1000
+                        or other.radius_of_curvature < 1000):
+                    return False
         # Rough parallelity implicit in other two conditions
 
         return True
@@ -116,21 +128,26 @@ class Line():
             return True
         # Check if line stays similar to before
         dist_min, dist_max = self.distance_self_past()
-        if dist_max > 0.5:
-            print('dist_self:', dist_max)
+        if dist_max > 0.4:
             return False
         return True
 
     def accept_fit(self, accept):
         if accept:
             self.detected = True
+            if self.fail_counter > 1:
+                self.all_pixels = []
+                self.all_weights = []
             self.all_pixels.append(self.pixels)
+            self.all_weights.append(np.ones(len(self.pixels)))
             self.fail_counter = 0
             self.fit_polynomial_smoothed()
+            self.calc_line_based_position()
             self.measure_curvature_real_smoothed()
         else:
             self.detected = False
-            # self.all_pixels.append(np.array([[]]))
+            self.all_pixels.append(self.pixels)
+            self.all_weights.append(np.zeros(len(self.pixels)))
             self.fail_counter += 1
 
     def get_poly_pixel_x_values(self, y_values):

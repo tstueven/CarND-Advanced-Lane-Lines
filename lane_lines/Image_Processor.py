@@ -309,24 +309,25 @@ class Image_Processor():
             return result
 
     def find_lane_line_pixels(self):
-        if (self.line_left.fail_counter < 10) and (
-                self.line_right.fail_counter < 10):
+        if (self.line_left.fail_counter < 15) and (
+                self.line_right.fail_counter < 15):
             self.find_lane_pixels_poly()
-        else:
-            self.find_lane_pixels_sliding_window()
-
-        if self.line_left.sanity_check_other(self.line_right):
-            if self.line_left.sanity_check_self():
-                self.line_left.accept_fit(True)
+            if self.line_left.sanity_check_other(self.line_right):
+                if self.line_left.sanity_check_self():
+                    self.line_left.accept_fit(True)
+                else:
+                    self.line_left.accept_fit(False)
+                if self.line_right.sanity_check_self():
+                    self.line_right.accept_fit(True)
+                else:
+                    self.line_right.accept_fit(False)
             else:
                 self.line_left.accept_fit(False)
-            if self.line_right.sanity_check_self():
-                self.line_right.accept_fit(True)
-            else:
                 self.line_right.accept_fit(False)
         else:
-            self.line_left.accept_fit(False)
-            self.line_right.accept_fit(False)
+            self.find_lane_pixels_sliding_window()
+            self.line_left.accept_fit(True)
+            self.line_right.accept_fit(True)
 
     def draw_lane(self):
         warp_zero = np.zeros_like(self.combined_binary_warped).astype(np.uint8)
@@ -352,7 +353,24 @@ class Image_Processor():
                                      (self.img_undist.shape[1],
                                       self.img_undist.shape[0]))
         # Combine the result with the original image
-        result = cv2.addWeighted(self.img_undist, 1, unwarp, 0.3, 0)
+        img = self.img_undist
+        mean_radius = (self.line_left.radius_of_curvature
+                       + self.line_right.radius_of_curvature) / 2
+        dist_from_center = self.line_left.line_base_pos \
+                           + self.line_right.line_base_pos
+        side = 'left' if dist_from_center > 0 else 'right'
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(img, 'Radius of Curvature = {:.1f}(m)'.format(mean_radius),
+                    (50, 50), font, 1,
+                    (255, 255, 255), 2,
+                    cv2.LINE_AA)
+        cv2.putText(img,
+                    'Vehicle is {:.2f}m {} of center'.format(
+                        np.abs(dist_from_center), side),
+                    (50, 100), font, 1,
+                    (255, 255, 255), 2,
+                    cv2.LINE_AA)
+        result = cv2.addWeighted(img, 1, unwarp, 0.3, 0)
 
         return result
 
@@ -360,12 +378,13 @@ class Image_Processor():
         self.new_image(image)
         self.undistort()
         self.calc_abs_gradient_binary(kernel_sizes=(3, 7, 11),
-                                      thresh=(60, 255))
+                                      thresh=(60, 150))
         self.calc_dir_gradient_binary(kernel_sizes=(3, 7, 11),
-                                      thresh=(30, 80), degrees=True)
-        self.calc_hls_thresh_binary(channel='s', thresh=(170, 255))
+                                      thresh=(30, 60), degrees=True)
+        self.calc_hls_thresh_binary(channel='s', thresh=(175, 255))
         self.calc_combined_binary()
         self.warp_perspective_binary()
         self.find_lane_line_pixels()
+
         # self.line_left.measure_curvature_real()
         return self.draw_lane()
